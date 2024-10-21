@@ -63,3 +63,86 @@
   )
 )
 
+;; Refund the buyer
+(define-public (refund-escrow (escrow-id uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (is-eq tx-sender (get seller escrow)) ERR-NOT-AUTHORIZED)
+    
+    (try! (as-contract (stx-transfer? (get amount escrow) (get buyer escrow))))
+    
+    (map-set escrows escrow-id
+      (merge escrow { status: "refunded" })
+    )
+    (ok true)
+  )
+)
+
+;; Get escrow details
+(define-read-only (get-escrow (escrow-id uint))
+  (map-get? escrows escrow-id)
+)
+
+;; Clarinet Tests
+
+;; Test: Create escrow
+(define-public (test-create-escrow)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+    )
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount)))
+    (let
+      (
+        (escrow (unwrap! (get-escrow u0) ERR-NOT-FOUND))
+      )
+      (asserts! (is-eq (get seller escrow) tx-sender) (err u1))
+      (asserts! (is-eq (get buyer escrow) buyer) (err u2))
+      (asserts! (is-eq (get amount escrow) amount) (err u3))
+      (asserts! (is-eq (get status escrow) "pending") (err u4))
+      (ok true)
+    )
+  )
+)
+
+;; Test: Release escrow
+(define-public (test-release-escrow)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+    )
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount)))
+    (try! (as-contract (contract-call? CONTRACT-NAME release-escrow u0)))
+    (let
+      (
+        (escrow (unwrap! (get-escrow u0) ERR-NOT-FOUND))
+      )
+      (asserts! (is-eq (get status escrow) "completed") (err u5))
+      (ok true)
+    )
+  )
+)
+
+;; Test: Refund escrow
+(define-public (test-refund-escrow)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+    )
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount)))
+    (try! (as-contract (contract-call? CONTRACT-NAME refund-escrow u0)))
+    (let
+      (
+        (escrow (unwrap! (get-escrow u0) ERR-NOT-FOUND))
+      )
+      (asserts! (is-eq (get status escrow) "refunded") (err u6))
+      (ok true)
+    )
+  )
+)
