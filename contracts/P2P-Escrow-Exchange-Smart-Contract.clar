@@ -43,3 +43,23 @@
   )
 )
 
+;; Release funds to the seller
+(define-public (release-escrow (escrow-id uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+      (fee (/ (* (get amount escrow) ESCROW-FEE) u10000))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (is-eq tx-sender (get buyer escrow)) ERR-NOT-AUTHORIZED)
+    
+    (try! (as-contract (stx-transfer? (- (get amount escrow) fee) (get seller escrow))))
+    (try! (as-contract (stx-transfer? fee CONTRACT-OWNER)))
+    
+    (map-set escrows escrow-id
+      (merge escrow { status: "completed" })
+    )
+    (ok true)
+  )
+)
+
