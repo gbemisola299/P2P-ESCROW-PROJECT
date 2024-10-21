@@ -63,3 +63,20 @@
   )
 )
 
+;; Refund the buyer
+(define-public (refund-escrow (escrow-id uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (is-eq tx-sender (get seller escrow)) ERR-NOT-AUTHORIZED)
+    
+    (try! (as-contract (stx-transfer? (get amount escrow) (get buyer escrow))))
+    
+    (map-set escrows escrow-id
+      (merge escrow { status: "refunded" })
+    )
+    (ok true)
+  )
+)
