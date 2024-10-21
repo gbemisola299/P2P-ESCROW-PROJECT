@@ -1,0 +1,20 @@
+[project]
+name = "P2P-Escrow-Project"
+description = "P2P Escrow Exchange Smart Contract"
+authors = ["Your Name <your.email@example.com>"]
+license = "MIT"
+
+[[contracts]]
+name = "P2P-Escrow-Project"
+path = "contracts/p2p-escrow-contract.clar"
+clarity_version = 2
+epoch = 2.4
+
+[contracts.P2P-Escrow-Project.functions]
+create-escrow = []
+release-escrow = []
+refund-escrow = []
+get-escrow = []
+test-create-escrow = []
+test-release-escrow = []
+test-refund-escrow = []
