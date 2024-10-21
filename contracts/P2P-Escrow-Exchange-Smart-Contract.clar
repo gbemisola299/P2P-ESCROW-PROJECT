@@ -21,3 +21,25 @@
     status: (string-ascii 20)
   }
 )
+
+;; Create a new escrow
+(define-public (create-escrow (buyer principal) (amount uint))
+  (let
+    (
+      (escrow-id (var-get next-escrow-id))
+    )
+    (asserts! (> amount u0) (err u400))
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    (map-set escrows escrow-id
+      {
+        seller: tx-sender,
+        buyer: buyer,
+        amount: amount,
+        status: "pending"
+      }
+    )
+    (var-set next-escrow-id (+ escrow-id u1))
+    (ok escrow-id)
+  )
+)
+
