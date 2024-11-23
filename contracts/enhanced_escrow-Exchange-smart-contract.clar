@@ -95,4 +95,62 @@ feat: Enhance core escrow functionality with timeouts
     (ok true)
   )
 )
+feat: Implement dispute resolution system
+
+;; Update escrow map with dispute fields
+(define-map escrows
+  uint
+  {
+    seller: principal,
+    buyer: principal,
+    amount: uint,
+    status: (string-ascii 20),
+    creation-time: uint,
+    expiration-time: uint,
+    dispute-reason: (optional (string-utf8 500))
+  }
+)
+
+;; Initiate dispute
+(define-public (dispute-escrow (escrow-id uint) (reason (string-utf8 500)))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (or (is-eq tx-sender (get buyer escrow)) (is-eq tx-sender (get seller escrow))) ERR-NOT-AUTHORIZED)
+    
+    (map-set escrows escrow-id
+      (merge escrow { 
+        status: "disputed",
+        dispute-reason: (some reason)
+      })
+    )
+    (ok true)
+  )
+)
+
+;; Resolve dispute
+(define-public (resolve-dispute (escrow-id uint) (refund-percentage uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+      (fee (/ (* (get amount escrow) ESCROW-FEE) u10000))
+      (refund-amount (/ (* (get amount escrow) refund-percentage) u100))
+      (seller-amount (- (- (get amount escrow) refund-amount) fee))
+    )
+    (asserts! (is-eq tx-sender (var-get admin-address)) ERR-NOT-AUTHORIZED)
+    (asserts! (is-eq (get status escrow) "disputed") ERR-INVALID-STATUS)
+    (asserts! (<= refund-percentage u100) (err u400))
+    
+    (try! (as-contract (stx-transfer? refund-amount (get buyer escrow))))
+    (try! (as-contract (stx-transfer? seller-amount (get seller escrow))))
+    (try! (as-contract (stx-transfer? fee CONTRACT-OWNER)))
+    
+    (map-set escrows escrow-id
+      (merge escrow { status: "resolved" })
+    )
+    (ok true)
+  )
+)
 
