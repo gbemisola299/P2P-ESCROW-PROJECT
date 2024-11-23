@@ -27,7 +27,6 @@
 (define-read-only (get-admin)
   (var-get admin-address)
 )
-feat: Enhance core escrow functionality with timeouts
 
 ;; Additional constants
 (define-constant ESCROW-FEE u100) ;; 1% fee
@@ -95,7 +94,6 @@ feat: Enhance core escrow functionality with timeouts
     (ok true)
   )
 )
-feat: Implement dispute resolution system
 
 ;; Update escrow map with dispute fields
 (define-map escrows
@@ -154,3 +152,157 @@ feat: Implement dispute resolution system
   )
 )
 
+;; Update escrow map with rating
+(define-map escrows
+  uint
+  {
+    seller: principal,
+    buyer: principal,
+    amount: uint,
+    status: (string-ascii 20),
+    creation-time: uint,
+    expiration-time: uint,
+    dispute-reason: (optional (string-utf8 500)),
+    rating: (optional uint)
+  }
+)
+
+;; Add user stats map
+(define-map user-stats
+  principal
+  {
+    total-transactions: uint,
+    successful-transactions: uint,
+    disputed-transactions: uint,
+    total-volume: uint,
+    average-rating: uint
+  }
+)
+
+;; Release with rating
+(define-public (release-escrow (escrow-id uint) (rating uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+      (fee (/ (* (get amount escrow) ESCROW-FEE) u10000))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (is-eq tx-sender (get buyer escrow)) ERR-NOT-AUTHORIZED)
+    (asserts! (<= rating u5) (err u400))
+    (asserts! (< block-height (get expiration-time escrow)) ERR-EXPIRED)
+    
+    (try! (as-contract (stx-transfer? (- (get amount escrow) fee) (get seller escrow))))
+    (try! (as-contract (stx-transfer? fee CONTRACT-OWNER)))
+    
+    (map-set escrows escrow-id
+      (merge escrow { 
+        status: "completed",
+        rating: (some rating)
+      })
+    )
+    (ok true)
+  )
+)
+
+;; Get user stats
+(define-read-only (get-user-stats (user principal))
+  (map-get? user-stats user)
+)
+feat: Add helper functions and utilities
+
+;; Update user stats
+(define-private (update-user-stats (user principal) (amount uint))
+  (let
+    (
+      (existing-stats (default-to
+        {
+          total-transactions: u0,
+          successful-transactions: u0,
+          disputed-transactions: u0,
+          total-volume: u0,
+          average-rating: u0
+        }
+        (map-get? user-stats user)
+      ))
+    )
+    (map-set user-stats user
+      (merge existing-stats {
+        total-transactions: (+ (get total-transactions existing-stats) u1),
+        total-volume: (+ (get total-volume existing-stats) amount)
+      })
+    )
+  )
+)
+
+(define-private (update-success-stats (user principal))
+  (let
+    (
+      (existing-stats (unwrap! (map-get? user-stats user) (err u404)))
+    )
+    (map-set user-stats user
+      (merge existing-stats {
+        successful-transactions: (+ (get successful-transactions existing-stats) u1)
+      })
+    )
+  )
+)
+
+(define-private (update-dispute-stats (user principal))
+  (let
+    (
+      (existing-stats (unwrap! (map-get? user-stats user) (err u404)))
+    )
+    (map-set user-stats user
+      (merge existing-stats {
+        disputed-transactions: (+ (get disputed-transactions existing-stats) u1)
+      })
+    )
+  )
+)
+feat: Implement comprehensive testing framework
+
+;; Test dispute flow
+(define-public (test-dispute-flow)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+      (timeout u144) ;; 2.4 hours in blocks
+    )
+    ;; Create escrow
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount timeout)))
+    ;; Dispute escrow
+    (try! (as-contract (contract-call? CONTRACT-NAME dispute-escrow u0 "Item not as described")))
+    ;; Resolve dispute with 50% refund
+    (try! (as-contract (contract-call? CONTRACT-NAME resolve-dispute u0 u50)))
+    
+    (let
+      (
+        (escrow (unwrap! (get-escrow u0) ERR-NOT-FOUND))
+      )
+      (asserts! (is-eq (get status escrow) "resolved") (err u7))
+      (ok true)
+    )
+  )
+)
+
+;; Test user stats
+(define-public (test-user-stats)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+    )
+    ;; Create and complete escrow
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount u144)))
+    (try! (as-contract (contract-call? CONTRACT-NAME release-escrow u0 u5)))
+    
+    (let
+      (
+        (stats (unwrap! (get-user-stats buyer) ERR-NOT-FOUND))
+      )
+      (asserts! (> (get total-transactions stats) u0) (err u8))
+      (ok true)
+    )
+  )
+)
