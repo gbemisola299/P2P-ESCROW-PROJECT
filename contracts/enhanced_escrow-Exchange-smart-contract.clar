@@ -95,7 +95,6 @@ feat: Enhance core escrow functionality with timeouts
     (ok true)
   )
 )
-feat: Implement dispute resolution system
 
 ;; Update escrow map with dispute fields
 (define-map escrows
@@ -209,4 +208,55 @@ feat: Implement dispute resolution system
 ;; Get user stats
 (define-read-only (get-user-stats (user principal))
   (map-get? user-stats user)
+)
+feat: Add helper functions and utilities
+
+;; Update user stats
+(define-private (update-user-stats (user principal) (amount uint))
+  (let
+    (
+      (existing-stats (default-to
+        {
+          total-transactions: u0,
+          successful-transactions: u0,
+          disputed-transactions: u0,
+          total-volume: u0,
+          average-rating: u0
+        }
+        (map-get? user-stats user)
+      ))
+    )
+    (map-set user-stats user
+      (merge existing-stats {
+        total-transactions: (+ (get total-transactions existing-stats) u1),
+        total-volume: (+ (get total-volume existing-stats) amount)
+      })
+    )
+  )
+)
+
+(define-private (update-success-stats (user principal))
+  (let
+    (
+      (existing-stats (unwrap! (map-get? user-stats user) (err u404)))
+    )
+    (map-set user-stats user
+      (merge existing-stats {
+        successful-transactions: (+ (get successful-transactions existing-stats) u1)
+      })
+    )
+  )
+)
+
+(define-private (update-dispute-stats (user principal))
+  (let
+    (
+      (existing-stats (unwrap! (map-get? user-stats user) (err u404)))
+    )
+    (map-set user-stats user
+      (merge existing-stats {
+        disputed-transactions: (+ (get disputed-transactions existing-stats) u1)
+      })
+    )
+  )
 )
