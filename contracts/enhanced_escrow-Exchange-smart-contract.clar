@@ -27,3 +27,71 @@
 (define-read-only (get-admin)
   (var-get admin-address)
 )
+feat: Enhance core escrow functionality with timeouts
+
+;; Additional constants
+(define-constant ESCROW-FEE u100) ;; 1% fee
+(define-constant DISPUTE-TIMEOUT u1440) ;; 24 hours in blocks
+
+;; Define data vars
+(define-data-var next-escrow-id uint u0)
+
+;; Define escrow map
+(define-map escrows
+  uint
+  {
+    seller: principal,
+    buyer: principal,
+    amount: uint,
+    status: (string-ascii 20),
+    creation-time: uint,
+    expiration-time: uint
+  }
+)
+
+;; Create escrow with timeout
+(define-public (create-escrow (buyer principal) (amount uint) (timeout uint))
+  (let
+    (
+      (escrow-id (var-get next-escrow-id))
+      (creation-block block-height)
+      (expiration-block (+ block-height timeout))
+    )
+    (asserts! (> amount u0) ERR-INSUFFICIENT-AMOUNT)
+    (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+    
+    (map-set escrows escrow-id
+      {
+        seller: tx-sender,
+        buyer: buyer,
+        amount: amount,
+        status: "pending",
+        creation-time: creation-block,
+        expiration-time: expiration-block
+      }
+    )
+    (var-set next-escrow-id (+ escrow-id u1))
+    (ok escrow-id)
+  )
+)
+
+;; Release escrow with timeout check
+(define-public (release-escrow (escrow-id uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+      (fee (/ (* (get amount escrow) ESCROW-FEE) u10000))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (is-eq tx-sender (get buyer escrow)) ERR-NOT-AUTHORIZED)
+    (asserts! (< block-height (get expiration-time escrow)) ERR-EXPIRED)
+    
+    (try! (as-contract (stx-transfer? (- (get amount escrow) fee) (get seller escrow))))
+    (try! (as-contract (stx-transfer? fee CONTRACT-OWNER)))
+    
+    (map-set escrows escrow-id
+      (merge escrow { status: "completed" })
+    )
+    (ok true)
+  )
+)
