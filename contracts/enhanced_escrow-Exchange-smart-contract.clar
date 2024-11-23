@@ -27,7 +27,6 @@
 (define-read-only (get-admin)
   (var-get admin-address)
 )
-feat: Enhance core escrow functionality with timeouts
 
 ;; Additional constants
 (define-constant ESCROW-FEE u100) ;; 1% fee
@@ -257,6 +256,53 @@ feat: Add helper functions and utilities
       (merge existing-stats {
         disputed-transactions: (+ (get disputed-transactions existing-stats) u1)
       })
+    )
+  )
+)
+feat: Implement comprehensive testing framework
+
+;; Test dispute flow
+(define-public (test-dispute-flow)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+      (timeout u144) ;; 2.4 hours in blocks
+    )
+    ;; Create escrow
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount timeout)))
+    ;; Dispute escrow
+    (try! (as-contract (contract-call? CONTRACT-NAME dispute-escrow u0 "Item not as described")))
+    ;; Resolve dispute with 50% refund
+    (try! (as-contract (contract-call? CONTRACT-NAME resolve-dispute u0 u50)))
+    
+    (let
+      (
+        (escrow (unwrap! (get-escrow u0) ERR-NOT-FOUND))
+      )
+      (asserts! (is-eq (get status escrow) "resolved") (err u7))
+      (ok true)
+    )
+  )
+)
+
+;; Test user stats
+(define-public (test-user-stats)
+  (let
+    (
+      (buyer 'ST1PQHQKV0RJXZFY1DGX8MNSNYVE3VGZJSRTPGZGM)
+      (amount u1000)
+    )
+    ;; Create and complete escrow
+    (try! (as-contract (contract-call? CONTRACT-NAME create-escrow buyer amount u144)))
+    (try! (as-contract (contract-call? CONTRACT-NAME release-escrow u0 u5)))
+    
+    (let
+      (
+        (stats (unwrap! (get-user-stats buyer) ERR-NOT-FOUND))
+      )
+      (asserts! (> (get total-transactions stats) u0) (err u8))
+      (ok true)
     )
   )
 )
