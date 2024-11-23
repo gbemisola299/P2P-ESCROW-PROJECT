@@ -154,3 +154,59 @@ feat: Implement dispute resolution system
   )
 )
 
+;; Update escrow map with rating
+(define-map escrows
+  uint
+  {
+    seller: principal,
+    buyer: principal,
+    amount: uint,
+    status: (string-ascii 20),
+    creation-time: uint,
+    expiration-time: uint,
+    dispute-reason: (optional (string-utf8 500)),
+    rating: (optional uint)
+  }
+)
+
+;; Add user stats map
+(define-map user-stats
+  principal
+  {
+    total-transactions: uint,
+    successful-transactions: uint,
+    disputed-transactions: uint,
+    total-volume: uint,
+    average-rating: uint
+  }
+)
+
+;; Release with rating
+(define-public (release-escrow (escrow-id uint) (rating uint))
+  (let
+    (
+      (escrow (unwrap! (map-get? escrows escrow-id) ERR-NOT-FOUND))
+      (fee (/ (* (get amount escrow) ESCROW-FEE) u10000))
+    )
+    (asserts! (is-eq (get status escrow) "pending") ERR-INVALID-STATUS)
+    (asserts! (is-eq tx-sender (get buyer escrow)) ERR-NOT-AUTHORIZED)
+    (asserts! (<= rating u5) (err u400))
+    (asserts! (< block-height (get expiration-time escrow)) ERR-EXPIRED)
+    
+    (try! (as-contract (stx-transfer? (- (get amount escrow) fee) (get seller escrow))))
+    (try! (as-contract (stx-transfer? fee CONTRACT-OWNER)))
+    
+    (map-set escrows escrow-id
+      (merge escrow { 
+        status: "completed",
+        rating: (some rating)
+      })
+    )
+    (ok true)
+  )
+)
+
+;; Get user stats
+(define-read-only (get-user-stats (user principal))
+  (map-get? user-stats user)
+)
